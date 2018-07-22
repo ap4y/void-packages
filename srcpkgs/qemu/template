@@ -38,6 +38,10 @@ esac
 
 post_extract() {
 	sed -i 's/__u64/unsigned long/' linux-user/host/aarch64/hostdep.h
+
+        msg_normal "Applying AMD patches"
+        patch -p1 < "${FILESDIR}/amd-smt-fixes-v7.patch"
+        patch -p1 < "${FILESDIR}/cpu-pinning.patch"
 }
 
 do_configure() {
