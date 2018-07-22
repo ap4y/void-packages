@@ -1,0 +1,32 @@
+# Template file for 'upwork'
+pkgname=upwork
+version=5.1.0.523
+revision=1
+only_for_archs="x86_64"
+short_desc="Desktop Upwork app"
+maintainer="Arthur Evstifeev <mail@ap4y.me>"
+license="Proprietary"
+homepage="https://upwork.com/"
+repository="nonfree"
+restricted=yes
+nopie=yes
+depends="alsa-lib gtk+ GConf gdk-pixbuf nss libXtst libXScrnSaver"
+checksum=c080abc0d736686e87ec1d51145e418374c3baaff46ed0939bac9f368d6213c6
+_rawver=${version//./_}
+_hashver="888hfm3u1mp4laii"
+distfiles="https://updates-desktopapp.upwork.com/binaries/v${_rawver}_${_hashver}/upwork_${version}_amd64.deb"
+
+do_extract() {
+	ar x ${XBPS_SRCDISTDIR}/${pkgname}-${version}/upwork_${version}_amd64.deb
+	cd ${wrksrc}
+	tar xfJ data.tar.xz
+}
+
+do_install() {
+	rm -rf usr/share/doc
+	vcopy usr/ /
+}
+
+post_install() {
+	vlicense $FILESDIR/LICENSE
+}
