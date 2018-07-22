@@ -1,0 +1,97 @@
+diff --git a/drivers/gpu/drm/radeon/radeon.h b/drivers/gpu/drm/radeon/radeon.h
+index d34887873dea..3bf721d23910 100644
+--- a/drivers/gpu/drm/radeon/radeon.h
++++ b/drivers/gpu/drm/radeon/radeon.h
+@@ -117,6 +117,7 @@ extern int radeon_uvd;
+ extern int radeon_vce;
+ extern int radeon_si_support;
+ extern int radeon_cik_support;
++extern int radeon_hdmimhz;
+ 
+ /*
+  * Copy from radeon_drv.h so we don't have to include both and have conflicting
+diff --git a/drivers/gpu/drm/radeon/radeon_connectors.c b/drivers/gpu/drm/radeon/radeon_connectors.c
+index df9469a8fdb1..2171fb65f7a6 100644
+--- a/drivers/gpu/drm/radeon/radeon_connectors.c
++++ b/drivers/gpu/drm/radeon/radeon_connectors.c
+@@ -1504,6 +1504,7 @@ static int radeon_dvi_mode_valid(struct drm_connector *connector,
+ 	struct drm_device *dev = connector->dev;
+ 	struct radeon_device *rdev = dev->dev_private;
+ 	struct radeon_connector *radeon_connector = to_radeon_connector(connector);
++	int mode_valid = MODE_OK;
+ 
+ 	/* XXX check mode bandwidth */
+ 
+@@ -1511,7 +1512,7 @@ static int radeon_dvi_mode_valid(struct drm_connector *connector,
+ 	if (radeon_connector->use_digital &&
+ 	    (rdev->family == CHIP_RV100) &&
+ 	    (mode->clock > 135000))
+-		return MODE_CLOCK_HIGH;
++		return MODE_CLOCK_HIGH; // never override since this is a known issue
+ 
+ 	if (radeon_connector->use_digital && (mode->clock > 165000)) {
+ 		if ((radeon_connector->connector_object_id == CONNECTOR_OBJECT_ID_DUAL_LINK_DVI_I) ||
+@@ -1521,19 +1522,22 @@ static int radeon_dvi_mode_valid(struct drm_connector *connector,
+ 		else if (ASIC_IS_DCE6(rdev) && drm_detect_hdmi_monitor(radeon_connector_edid(connector))) {
+ 			/* HDMI 1.3+ supports max clock of 340 Mhz */
+ 			if (mode->clock > 340000)
+-				return MODE_CLOCK_HIGH;
++				mode_valid = MODE_CLOCK_HIGH;
+ 			else
+ 				return MODE_OK;
+ 		} else {
+-			return MODE_CLOCK_HIGH;
++			mode_valid = MODE_CLOCK_HIGH;
+ 		}
+ 	}
+ 
++	if (radeon_hdmimhz > 0 && (mode->clock <= radeon_hdmimhz * 1000))
++		mode_valid = MODE_OK;
++
+ 	/* check against the max pixel clock */
+-	if ((mode->clock / 10) > rdev->clock.max_pixel_clock)
+-		return MODE_CLOCK_HIGH;
++	if (mode_valid == MODE_OK && (mode->clock / 10) > rdev->clock.max_pixel_clock)
++		mode_valid = MODE_CLOCK_HIGH;
+ 
+-	return MODE_OK;
++	return mode_valid;
+ }
+ 
+ static const struct drm_connector_helper_funcs radeon_dvi_connector_helper_funcs = {
+diff --git a/drivers/gpu/drm/radeon/radeon_drv.c b/drivers/gpu/drm/radeon/radeon_drv.c
+index 31dd04f6baa1..dcc9939384dc 100644
+--- a/drivers/gpu/drm/radeon/radeon_drv.c
++++ b/drivers/gpu/drm/radeon/radeon_drv.c
+@@ -196,6 +196,7 @@ int radeon_auxch = -1;
+ int radeon_mst = 0;
+ int radeon_uvd = 1;
+ int radeon_vce = 1;
++int radeon_hdmimhz = 0;
+ 
+ MODULE_PARM_DESC(no_wb, "Disable AGP writeback for scratch registers");
+ module_param_named(no_wb, radeon_no_wb, int, 0444);
+@@ -293,6 +294,9 @@ module_param_named(uvd, radeon_uvd, int, 0444);
+ MODULE_PARM_DESC(vce, "vce enable/disable vce support (1 = enable, 0 = disable)");
+ module_param_named(vce, radeon_vce, int, 0444);
+ 
++MODULE_PARM_DESC(hdmimhz, "Force a maximum HDMI pixel clock (in MHz); try 165/225/297/330 to overclock your TMDS for gaining a higher resolution.");
++module_param_named(hdmimhz, radeon_hdmimhz, int, 0400);
++
+ int radeon_si_support = 1;
+ MODULE_PARM_DESC(si_support, "SI support (1 = enabled (default), 0 = disabled)");
+ module_param_named(si_support, radeon_si_support, int, 0444);
+diff --git a/drivers/gpu/drm/radeon/radeon_encoders.c b/drivers/gpu/drm/radeon/radeon_encoders.c
+index c6ee80216cf4..984629517c09 100644
+--- a/drivers/gpu/drm/radeon/radeon_encoders.c
++++ b/drivers/gpu/drm/radeon/radeon_encoders.c
+@@ -372,6 +372,9 @@ bool radeon_dig_monitor_is_duallink(struct drm_encoder *encoder,
+ 	struct radeon_connector *radeon_connector;
+ 	struct radeon_connector_atom_dig *dig_connector;
+ 
++	if (radeon_hdmimhz > 0)
++		return false;
++
+ 	connector = radeon_get_connector_for_encoder(encoder);
+ 	/* if we don't have an active device yet, just use one of
+ 	 * the connectors tied to the encoder.
